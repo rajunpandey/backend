@@ -105,6 +105,44 @@ app.get('/api/leaderboard/:gameid', async (req, res) => {
     }
 });
 
+app.get('/users', async (req, res) => {
+    try {
+        const users = await User.find(); // Fetch all users from the collection
+        res.status(200).json(users); // Send users as JSON response
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+// API Endpoint to Create a New User
+app.post('/users', async (req, res) => {
+    try {
+        const { name, email } = req.body; // Extract name and email from the request body
+
+        // Check if name and email are provided
+        if (!name || !email) {
+            return res.status(400).json({ message: 'Name and email are required' });
+        }
+
+        // Create a new user document
+        const newUser = new User({ name, email });
+        const savedUser = await newUser.save(); // Save user to the database
+
+        res.status(201).json(savedUser); // Respond with the saved user
+    } catch (error) {
+        console.error('Error creating user:', error);
+
+        // Handle duplicate email errors
+        if (error.code === 11000) {
+            return res.status(400).json({ message: 'Email must be unique' });
+        }
+
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
