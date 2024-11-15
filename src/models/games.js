@@ -1,7 +1,6 @@
 
 import mongoose from 'mongoose';
 
-
 const userSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -13,6 +12,8 @@ const userSchema = new mongoose.Schema({
         unique: true
     }
 });
+
+
 
 const gameSchema = new mongoose.Schema({
     title: {
@@ -29,13 +30,17 @@ const gameSchema = new mongoose.Schema({
 });
 
 
+
+
 const scoreSchema = new mongoose.Schema({
     userid: {
-        type: Number, 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User',  
         required: true
     },
     gameid: {
-        type: Number,  
+        type: mongoose.Schema.Types.ObjectId,  
+        ref: 'Game',  
         required: true
     },
     score: {

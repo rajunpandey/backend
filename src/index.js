@@ -13,69 +13,63 @@ app.use(bodyParser.json());
 connectDB();
 
 
-app.post('/api/score', async (req, res) => {
-    const { userid, gameid, score, username, email, title, description } = req.body;
-
-    if (!userid || !gameid || score === undefined) {
-        return res.status(400).json({ message: 'userid, gameid, and score are required.' });
-    }
-
+app.post('/users/:userId?/scores', async (req, res) => {
     try {
-        let user = await User.findById(userid);
-        let game = await Game.findById(gameid);
+        const { userId } = req.params;  
+        const { name, email, gameTitle, score } = req.body;  
 
-
-        if (!user && username && email) {
-            user = new User({
-                name: username,
-                email: email
-            });
-            await user.save();
-            console.log('New user created:', user);
-        } else if (!user) {
-            return res.status(404).json({ message: 'User not found, and no data provided to create one.' });
+        if (!gameTitle || score === undefined) {
+            return res.status(400).json({ message: 'Game title and score are required' });
         }
 
-       
-        if (!game && title && description) {
-            game = new Game({
-                title: title,
-                description: description
-            });
-            await game.save();
-            console.log('New game created:', game);
-        } else if (!game) {
-            return res.status(404).json({ message: 'Game not found, and no data provided to create one.' });
-        }
+        let user;
 
-        let scoreEntry = await Score.findOne({ userid, gameid });
-
-        if (scoreEntry) {
-            
-            if (score > scoreEntry.score) {
-                scoreEntry.score = score;
-                scoreEntry.recordedAt = new Date();
-                await scoreEntry.save();
-                return res.status(200).json({ message: 'Score updated successfully', score: scoreEntry });
-            } else {
-                return res.status(200).json({ message: 'New score is not higher than the existing score' });
+        // Step 1: Handle the case where userId is provided or not
+        if (userId) {
+            user = await User.findById(userId);
+            if (!user) {
+                // If user is not found, create a new user
+                user = new User({ name, email });
+                await user.save();  
             }
         } else {
-        
-            scoreEntry = new Score({
-                userid,
-                gameid,
-                score,
-                recordedAt: new Date()
-            });
-            await scoreEntry.save();
-            return res.status(201).json({ message: 'Score saved successfully', score: scoreEntry });
+            // If userId is not provided, check if user exists with the same email
+            user = await User.findOne({ email });
+            if (user) {
+                return res.status(400).json({ message: 'User with this email already exists' });
+            }
+
+            // If no existing user, create a new user from the body
+            user = new User({ name, email });
+            await user.save();  
         }
+
+        // Step 2: Check if the game exists, if not, create a new game
+        let game = await Game.findOne({ title: gameTitle });
+        if (!game) {
+            game = new Game({ title: gameTitle });
+            await game.save(); 
+        }
+
+        // Step 3: Create and save the score
+        const newScore = new Score({
+            userid: user._id, 
+            gameid: game._id, 
+            score: score
+        });
+
+        const savedScore = await newScore.save(); 
+
+        // Send the created score as response
+        res.status(201).json(savedScore);
     } catch (error) {
-        console.error(error);
-        return res.status(500).json({ message: 'Server error' });
+        console.error('Error saving game and score:', error);
+        res.status(500).json({ message: 'Internal Server Error' });
     }
 });
+
+
+
 
 
 
@@ -107,8 +101,8 @@ app.get('/api/leaderboard/:gameid', async (req, res) => {
 
 app.get('/users', async (req, res) => {
     try {
-        const users = await User.find(); // Fetch all users from the collection
-        res.status(200).json(users); // Send users as JSON response
+        const users = await User.find(); 
+        res.status(200).json(users); 
     } catch (error) {
         console.error('Error fetching users:', error);
         res.status(500).json({ message: 'Internal Server Error' });
@@ -132,9 +126,9 @@ app.post('/users', async (req, res) => {
 
         // Create a new user document
         const newUser = new User({ name, email });
-        const savedUser = await newUser.save(); // Save user to the database
+        const savedUser = await newUser.save(); 
 
-        res.status(201).json(savedUser); // Respond with the saved user
+        res.status(201).json(savedUser); 
     } catch (error) {
         console.error('Error creating user:', error);
 
@@ -143,6 +137,39 @@ app.post('/users', async (req, res) => {
             return res.status(400).json({ message: 'Email must be unique' });
         }
 
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
+
+
+app.get('/users/:userId/scores', async (req, res) => {
+    try {
+        const { userId } = req.params; 
+
+        // Fetch scores for the user
+        const scores = await Score.find({ userid: userId }); 
+
+        if (!scores.length) {
+            return res.status(404).json({ message: 'No scores found for this user' });
+        }
+
+        // Fetch game details for each score
+        const gameIds = scores.map(score => score.gameid); 
+        const games = await Game.find({ _id: { $in: gameIds } }); 
+
+        // Combine scores and game information
+        const result = scores.map(score => {
+            const game = games.find(game => game._id.toString() === score.gameid.toString());
+            return {
+                game: game ? game.title : 'Unknown Game',
+                score: score.score,
+                recordedAt: score.recordedAt
+            };
+        });
+
+        res.status(200).json(result); 
+    } catch (error) {
+        console.error('Error fetching user scores:', error);
         res.status(500).json({ message: 'Internal Server Error' });
     }
 });
