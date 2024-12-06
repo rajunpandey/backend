@@ -1,4 +1,3 @@
-
 import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
@@ -13,8 +12,6 @@ const userSchema = new mongoose.Schema({
     }
 });
 
-
-
 const gameSchema = new mongoose.Schema({
     title: {
         type: String,
@@ -28,9 +25,6 @@ const gameSchema = new mongoose.Schema({
         default: Date.now
     }
 });
-
-
-
 
 const scoreSchema = new mongoose.Schema({
     userid: {
@@ -52,8 +46,6 @@ const scoreSchema = new mongoose.Schema({
         default: Date.now
     }
 });
-
-
 
 const User = mongoose.model('User', userSchema);
 const Game = mongoose.model('Game', gameSchema);
