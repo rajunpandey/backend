@@ -1,54 +1,45 @@
 import mongoose from 'mongoose';
 
+// User Schema
 const userSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: true
-    },
-    email: {
+    username: {
         type: String,
         required: true,
-        unique: true
-    }
+        unique: true, // Ensure usernames are unique
+    },
 });
 
+// Game Schema
 const gameSchema = new mongoose.Schema({
-    title: {
+    name: {
         type: String,
-        required: true
+        required: true,
     },
-    description: {
-        type: String
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
 });
 
+// Score Schema
 const scoreSchema = new mongoose.Schema({
     userid: {
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'User',  
-        required: true
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
     },
     gameid: {
-        type: mongoose.Schema.Types.ObjectId,  
-        ref: 'Game',  
-        required: true
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Game',
+        required: true,
     },
     score: {
         type: Number,
-        required: true
+        required: true,
     },
-    recordedAt: {
+    createdAt: {
         type: Date,
-        default: Date.now
-    }
+        default: Date.now,
+    },
 });
 
-const User = mongoose.model('User', userSchema);
-const Game = mongoose.model('Game', gameSchema);
-const Score = mongoose.model('Score', scoreSchema);
-
-export { User, Game, Score };
+// Models
+export const User = mongoose.model('User', userSchema);
+export const Game = mongoose.model('Game', gameSchema);
+export const Score = mongoose.model('Score', scoreSchema);
