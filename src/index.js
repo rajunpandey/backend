@@ -5,22 +5,19 @@ import cors from 'cors';
 import connectDB from './db/index.js';
 import { User, Game, Score } from './models/games.js';
 
-// Configure dotenv
 dotenv.config({ path: './.env' });
 
 const app = express();
 
-// Corrected CORS configuration
 app.use(
     cors({
-        origin: ['http://localhost:3000', 'http://localhost:3002'], // Allow specific frontend origins
-        credentials: true, // Allow credentials like cookies, if needed
+        origin: ['http://localhost:3000', 'http://localhost:3002', 'http://localhost:5500'],
+        credentials: true,
     })
 );
 
 app.use(bodyParser.json());
 
-// Connect to MongoDB
 connectDB();
 
 // API: Create or retrieve user
@@ -32,7 +29,6 @@ app.post('/users', async (req, res) => {
     }
 
     try {
-        // Find or create user by username
         let user = await User.findOne({ username });
 
         if (!user) {
@@ -56,7 +52,6 @@ app.post('/scores', async (req, res) => {
     }
 
     try {
-        // Find or create user by username
         let user = await User.findOne({ username });
 
         if (!user) {
@@ -64,14 +59,12 @@ app.post('/scores', async (req, res) => {
             await user.save();
         }
 
-        // Find or create the default game
         let game = await Game.findOneAndUpdate(
             { name: 'Default Game' },
             { name: 'Default Game' },
             { upsert: true, new: true }
         );
 
-        // Save the score
         const newScore = new Score({ userid: user._id, gameid: game._id, score });
         await newScore.save();
 
@@ -82,6 +75,35 @@ app.post('/scores', async (req, res) => {
     }
 });
 
-// Server
+// API: Get leaderboard
+app.get('/leaderboard', async (req, res) => {
+    try {
+        const scores = await Score.find()
+            .populate({
+                path: 'userid',
+                select: 'username' 
+            })
+            .sort({ score: -1 })
+            .limit(10)
+            .lean();
+
+        // If no scores exist, return a message
+        if (scores.length === 0) {
+            return res.status(200).json({ message: 'No scores submitted yet!' });
+        }
+
+        // Map scores to include username and score
+        const leaderboard = scores.map(score => ({
+            username: score.userid?.username || 'Unknown', // Fallback to 'Unknown' if username is missing
+            score: score.score,
+        }));
+
+        res.status(200).json(leaderboard);
+    } catch (error) {
+        console.error('Leaderboard error:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+});
+
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
