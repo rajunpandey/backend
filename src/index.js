@@ -5,105 +5,209 @@ import cors from 'cors';
 import connectDB from './db/index.js';
 import { User, Game, Score } from './models/games.js';
 
+// Initialize environment variables
 dotenv.config({ path: './.env' });
 
 const app = express();
 
-app.use(
-    cors({
-        origin: ['http://localhost:3000', 'http://localhost:3002', 'http://localhost:5500'],
-        credentials: true,
-    })
-);
-
+// Middleware
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:3002', 'http://localhost:5500'],
+    credentials: true
+}));
 app.use(bodyParser.json());
 
+
+// Database Connection
 connectDB();
 
-// API: Create or retrieve user
+// API Endpoints
+// ==============
+
+// 1. User Management
 app.post('/users', async (req, res) => {
-    const { username } = req.body;
-
-    if (!username) {
-        return res.status(400).json({ error: 'Username is required' });
-    }
-
     try {
-        let user = await User.findOne({ username });
+        const { username } = req.body;
+        if (!username) return res.status(400).json({ error: 'Username required' });
 
-        if (!user) {
-            user = new User({ username });
-            await user.save();
-        }
-
-        res.status(201).json({ userId: user._id, username: user.username });
-    } catch (error) {
-        console.error('User creation error:', error);
-        res.status(500).json({ error: 'Failed to create/retrieve user' });
-    }
-});
-
-// API: Save user score
-app.post('/scores', async (req, res) => {
-    const { username, score } = req.body;
-
-    if (!username || typeof score !== 'number') {
-        return res.status(400).json({ error: 'Username and score are required' });
-    }
-
-    try {
-        let user = await User.findOne({ username });
-
-        if (!user) {
-            user = new User({ username });
-            await user.save();
-        }
-
-        let game = await Game.findOneAndUpdate(
-            { name: 'Default Game' },
-            { name: 'Default Game' },
+        const user = await User.findOneAndUpdate(
+            { username },
+            {},
             { upsert: true, new: true }
         );
 
-        const newScore = new Score({ userid: user._id, gameid: game._id, score });
-        await newScore.save();
-
-        res.status(201).json({ message: 'Score saved successfully', newScore });
+        res.status(201).json({ userId: user._id, username: user.username });
     } catch (error) {
-        console.error('Score save error:', error);
-        res.status(500).json({ error: 'Failed to save score' });
+        console.error('User error:', error);
+        res.status(500).json({ error: 'User operation failed' });
     }
 });
 
-// API: Get leaderboard
+// 2. Score Submission
+app.post('/scores', async (req, res) => {
+    try {
+        const { username, score, game } = req.body;
+        if (!username || !game || typeof score !== 'number') {
+            return res.status(400).json({ error: 'Invalid score data' });
+        }
+
+        // Game Handling
+        const gameDoc = await Game.findOneAndUpdate(
+            { name: game },
+            { name: game },
+            { upsert: true, new: true }
+        );
+
+        // User Handling
+        const user = await User.findOneAndUpdate(
+            { username },
+            {},
+            { upsert: true, new: true }
+        );
+
+        // Score Creation
+        const newScore = new Score({
+            userid: user._id,
+            gameid: gameDoc._id,
+            score
+        });
+        await newScore.save();
+
+        res.status(201).json({ 
+            message: 'Score saved',
+            game: gameDoc.name,
+            username,
+            score
+        });
+    } catch (error) {
+        console.error('Score error:', error);
+        res.status(500).json({ error: 'Score save failed' });
+    }
+});
+
+// 3. Leaderboard System
 app.get('/leaderboard', async (req, res) => {
     try {
-        const scores = await Score.find()
-            .populate({
-                path: 'userid',
-                select: 'username' 
-            })
+        const { game } = req.query;
+        if (!game) return res.status(400).json({ error: 'Game name required' });
+
+        const gameDoc = await Game.findOne({ name: game });
+        if (!gameDoc) return res.status(404).json({ error: 'Game not found' });
+
+        const scores = await Score.find({ gameid: gameDoc._id })
+            .populate('userid', 'username')
             .sort({ score: -1 })
             .limit(10)
             .lean();
 
-        // If no scores exist, return a message
-        if (scores.length === 0) {
-            return res.status(200).json({ message: 'No scores submitted yet!' });
-        }
-
-        // Map scores to include username and score
-        const leaderboard = scores.map(score => ({
-            username: score.userid?.username || 'Unknown', // Fallback to 'Unknown' if username is missing
-            score: score.score,
-        }));
-
-        res.status(200).json(leaderboard);
+        res.status(200).json({
+            game: gameDoc.name,
+            scores: scores.map(score => ({
+                username: score.userid?.username || 'Anonymous',
+                score: score.score
+            }))
+        });
     } catch (error) {
         console.error('Leaderboard error:', error);
-        res.status(500).json({ error: 'Failed to fetch leaderboard' });
+        res.status(500).json({ error: 'Leaderboard fetch failed' });
     }
 });
 
+// 4. Combined Leaderboards
+app.get('/all-leaderboards', async (req, res) => {
+    try {
+        const games = await Game.find().lean();
+        const leaderboards = await Promise.all(games.map(async game => {
+            const scores = await Score.find({ gameid: game._id })
+                .populate('userid', 'username')
+                .sort({ score: -1 })
+                .limit(3)  // Top 3 per game
+                .lean();
+
+            return {
+                game: game.name,
+                scores: scores.map(score => ({
+                    username: score.userid?.username || 'Anonymous',
+                    score: score.score
+                }))
+            };
+        }));
+
+        res.status(200).json(leaderboards);
+    } catch (error) {
+        console.error('All leaderboards error:', error);
+        res.status(500).json({ error: 'Combined leaderboard fetch failed' });
+    }
+});
+
+
+
+
+// 5. Personal Leaderboard
+app.get('/scores/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const { game } = req.query;
+
+        const user = await User.findOne({ username });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const query = { userid: user._id };
+        if (game) {
+            const gameDoc = await Game.findOne({ name: game });
+            if (gameDoc) query.gameid = gameDoc._id;
+        }
+
+        const scores = await Score.find(query)
+            .populate('gameid', 'name')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        res.status(200).json({
+            username,
+            scores: scores.map(score => ({
+                game: score.gameid?.name || 'Unknown',
+                score: score.score,
+                date: score.createdAt
+            }))
+        });
+    } catch (error) {
+        console.error('Personal scores error:', error);
+        res.status(500).json({ error: 'Failed to fetch personal scores' });
+    }
+});
+
+
+
+app.get('/search', async (req, res) => {
+    try {
+        const { game, username } = req.query;
+        const gameDoc = await Game.findOne({ name: game });
+        
+        const query = { gameid: gameDoc._id };
+        if (username) {
+            const users = await User.find({ 
+                username: new RegExp(username, 'i') 
+            });
+            query.userid = { $in: users.map(u => u._id) };
+        }
+
+        const scores = await Score.find(query)
+            .populate('userid', 'username')
+            .sort({ score: -1 })
+            .lean();
+
+        res.json({
+            game,
+            scores: scores.map(entry => ({
+                username: entry.userid?.username,
+                score: entry.score
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Search failed' });
+    }
+});
+// Server Initialization
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
